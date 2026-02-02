@@ -71,12 +71,13 @@ class GlobalStats(Container):
         self.query_one("#val_whales", Label).update(str(len(whales)))
 
 class PnLDisplay(Container):
-    """Widget to display P&L breakdown"""
+    """Widget to display P&L breakdown by strategy"""
     
     def compose(self) -> ComposeResult:
-         with Horizontal(classes="stat-row"):
-            yield Label("Today:", classes="stat-label")
-            yield Label("$0.00", id="val_daily_pnl", classes="stat-value")
+        # Vertical layout with separate labels
+        yield Static("Total: $0.00", id="pnl_total", classes="pnl-line")
+        yield Static("NR: $0 | Bonds: $0", id="pnl_line1", classes="pnl-line-small")
+        yield Static("Whale: $0 | Temp: $0", id="pnl_line2", classes="pnl-line-small")
 
     def update_pnl(self) -> None:
         asyncio.create_task(self._fetch_pnl())
@@ -84,6 +85,28 @@ class PnLDisplay(Container):
     async def _fetch_pnl(self):
         daily = await db.get_daily_pnl()
         if daily:
-             val = daily['total_pnl']
-             pnl = f"[green]${val:,.2f}[/]" if val >= 0 else f"[red]-${abs(val):,.2f}[/]"
-             self.query_one("#val_daily_pnl", Label).update(pnl)
+            # Format values
+            total = daily['total_pnl']
+            negrisk = daily.get('negrisk_arb_pnl', 0)
+            bond = daily.get('high_prob_bond_pnl', 0)
+            whale = daily.get('whale_copy_pnl', 0)
+            temporal = daily.get('temporal_arb_pnl', 0)
+            
+            # Color code based on positive/negative
+            def fmt(val):
+                if val >= 0:
+                    return f"[green]${val:.2f}[/]"
+                else:
+                    return f"[red]-${abs(val):.2f}[/]"
+            
+            # Update displays across 3 lines
+            self.query_one("#pnl_total", Static).update(f"Total: {fmt(total)}")
+            self.query_one("#pnl_line1", Static).update(f"NR: {fmt(negrisk)} | Bonds: {fmt(bond)}")
+            self.query_one("#pnl_line2", Static).update(f"Whale: {fmt(whale)} | Temp: {fmt(temporal)}")
+        else:
+            # No data yet
+            self.query_one("#pnl_total", Static).update("Total: $0.00")
+            self.query_one("#pnl_line1", Static).update("NR: $0 | Bonds: $0")
+            self.query_one("#pnl_line2", Static).update("Whale: $0 | Temp: $0")
+
+

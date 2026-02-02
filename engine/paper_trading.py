@@ -38,7 +38,9 @@ async def simulate_trade(
     price: float,
     position_size_usd: float,
     is_crypto_15min: bool = True,
-    arb_id: Optional[str] = None
+    arb_id: Optional[str] = None,
+    asset: Optional[str] = None,
+    resolution_time: Optional[str] = None
 ) -> Optional[int]:
     """
     Simulate a paper trade
@@ -52,6 +54,8 @@ async def simulate_trade(
         position_size_usd: How much USD to spend
         is_crypto_15min: Whether this is a 15-min crypto market (affects fees)
         arb_id: Optional ID to link multi-leg arbitrage trades
+        asset: Optional asset/coin being traded (e.g., "BTC", "ETH")
+        resolution_time: Optional ISO timestamp when market resolves
     
     Returns:
         Trade ID if successful, None if insufficient balance
@@ -64,23 +68,54 @@ async def simulate_trade(
     
     current_balance = fund["current_balance"]
     
-    # Check sufficient balance
-    if position_size_usd > current_balance:
-        tui_print(f"Insufficient balance: need ${position_size_usd:.2f}, have ${current_balance:.2f}")
-        return None
-    
-    # Calculate shares and fee
+    # Calculate fees and total cost first to check against limits
     shares = position_size_usd / price
     fee = calculate_fee(shares, price, is_crypto_15min)
     total_cost = position_size_usd + fee
+
+    # DAILY INVESTMENT CAP CHECK
+    # Calculate Total Account Value (NAV) = Cash + Cost of Open Positions
+    # (Using cost is safer/simpler than market value for this check)
+    open_trades = await db.get_open_trades()
+    open_positions_value = sum(t['cost'] for t in open_trades)
+    total_account_value = current_balance + open_positions_value
     
-    # Double-check total cost doesn't exceed balance
+    # Calculate spending today
+    daily_spend = await db.get_daily_spend()
+    
+    # Limit: 50% of Total Account Value
+    daily_limit = total_account_value * config.DAILY_VOLUME_CAP_PCT
+    
+    if (daily_spend + total_cost) > daily_limit:
+        tui_print(f"⚠️  Daily investment limit reached! Spend: ${daily_spend:.2f} + ${total_cost:.2f} > ${daily_limit:.2f} (50% of ${total_account_value:.2f})")
+        return None
+
+    # Check sufficient balance
     if total_cost > current_balance:
-        # Adjust shares to fit within balance
-        available_for_shares = current_balance - fee
-        shares = available_for_shares / price
-        position_size_usd = shares * price
-        total_cost = position_size_usd + fee
+        # If we have balance issues but haven't hit the daily cap, try to adjust size
+        # However, for strategy consistency, we might just fail here or adjust
+        if current_balance < 1.0: # Minimum trade check
+             tui_print(f"Insufficient balance: need ${total_cost:.2f}, have ${current_balance:.2f}")
+             return None
+        
+        # Adjust to max available
+        available = current_balance - 0.05 # Leave tiny buffer
+        if available < 1.0:
+            return None
+        
+        # Recalculate based on available
+        shares = available / price
+        fee = calculate_fee(shares, price, is_crypto_15min)
+        total_cost = available # Approx
+        position_size_usd = total_cost - fee
+        tui_print(f"  ℹ️  Adjusted position to available balance: ${position_size_usd:.2f}")
+
+    # Double-check total cost doesn't exceed balance strict check
+    if total_cost > current_balance:
+        return None
+    
+    # shares and fee are calculated above or adjusted
+
     
     # Create trade record
     trade_id = await db.create_paper_trade(
@@ -92,7 +127,9 @@ async def simulate_trade(
         shares=shares,
         cost=position_size_usd,
         fee=fee,
-        arb_id=arb_id
+        arb_id=arb_id,
+        asset=asset,
+        resolution_time=resolution_time
     )
     
     # Deduct from balance
@@ -135,13 +172,45 @@ async def calculate_position_size(
         return balance * config.BOND_DEFAULT_POSITION_PCT
     
     elif strategy_id == "WHALE_COPY":
-        # Position size based on confidence level
-        if confidence == "STRONG":
-            return balance * config.WHALE_POSITION_STRONG
-        elif confidence == "HIGH":
-            return balance * config.WHALE_POSITION_HIGH
-        else:  # MEDIUM
-            return balance * config.WHALE_POSITION_MEDIUM
+        # Risk Management: Kelly Criterion vs Fixed
+        if hasattr(config, 'RISK_MANAGEMENT_MODE') and config.RISK_MANAGEMENT_MODE == "KELLY":
+            # Need price to calculate odds, but function sig limits us. 
+            # We will use confidence to adjust the Kelly Fraction slightly if needed,
+            # but ideally we need the price passed in. 
+            # modifying calculate_position_size signature is risky for existing calls.
+            # We will infer 'b' (odds) assumes a roughly 1:1 payout (price ~0.5) if not available,
+            # BUT for accurate Kelly we really need the price.
+            # Let's use a safe default assuming price is around 0.5-0.6 (odds ~0.8)
+            # Better approach: Use fixed tiers but calibrated by Kelly logic conceptually
+            
+            # HOWEVER, for true Kelly, we should calculate it dynamically.
+            # Since we can't easily change the signature everywhere safely in one go,
+            # we'll stick to the "Confidence Tiers" which are effectively simplified Kelly
+            # for 60% win rate at different conviction levels.
+            
+            # If user strictly wants Kelly math:
+            # Kelly % = W - (1-W)/R where R = profit/loss ratio.
+            # for binary options, R = (1-p)/p where p is entry price.
+            # So Kelly = W - (1-W)/((1-p)/p) = W - (1-W)*p/(1-p) = (W - p) / (1-p)
+            
+            # We will use a baseline price of 0.55 for sizing roughly.
+            # Kelly = (0.60 - 0.55) / (1 - 0.55) = 0.05 / 0.45 = 11%
+            # Half Kelly = 5.5%
+            
+            if confidence == "STRONG":
+                return balance * 0.05  # ~Half Kelly for 60% win rate
+            elif confidence == "HIGH":
+                return balance * 0.03
+            else:
+                return balance * 0.02
+        else:
+            # Original Fixed Sizing
+            if confidence == "STRONG":
+                return balance * config.WHALE_POSITION_STRONG
+            elif confidence == "HIGH":
+                return balance * config.WHALE_POSITION_HIGH
+            else:  # MEDIUM
+                return balance * config.WHALE_POSITION_MEDIUM
     
     elif strategy_id == "TEMPORAL_ARB":
         # Conservative 1% for temporal arbitrage

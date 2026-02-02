@@ -15,31 +15,38 @@ async def fetch_btc_indicators() -> Optional[Dict[str, Any]]:
     """
     Fetch BTC price data and calculate all indicators
     Returns dict with RSI, EMA crossover, volume, and ATR data
+    
+    NOTE: Disabled to avoid CoinGecko rate limits.
+    Whale copy strategy will use full position size when indicators unavailable.
     """
-    # Fetch BTC candles from Binance
-    candles = await price_feeds.fetch_binance_btc_candles(
-        interval=config.BTC_CANDLE_INTERVAL,
-        limit=config.BTC_CANDLE_LIMIT + 20  # Extra for indicator calculation
-    )
+    # Disabled - CoinGecko has rate limits
+    # To re-enable, you would need a reliable BTC price/candle data source
+    return None
     
-    if not candles or len(candles) < config.BTC_CANDLE_LIMIT:
-        return None
-    
-    # Convert to pandas DataFrame
-    df = pd.DataFrame(candles)
-    
-    # Calculate indicators
-    rsi = calculate_rsi(df)
-    ema_signal = calculate_ema_crossover(df)
-    volume_signal = calculate_volume_signal(df)
-    atr_signal = calculate_atr_signal(df)
-    
-    return {
-        "rsi": rsi,
-        "ema_signal": ema_signal,  # "UP", "DOWN", or "NEUTRAL"
-        "volume_signal": volume_signal,  # "LOW", "NORMAL", or "HIGH"
-        "atr_signal": atr_signal  # "HIGH_VOLATILITY" or "NORMAL"
-    }
+    # Original implementation (commented out):
+    # candles = await price_feeds.fetch_binance_btc_candles(
+    #     interval=config.BTC_CANDLE_INTERVAL,
+    #     limit=config.BTC_CANDLE_LIMIT + 20  # Extra for indicator calculation
+    # )
+    # 
+    # if not candles or len(candles) < config.BTC_CANDLE_LIMIT:
+    #     return None
+    # 
+    # # Convert to pandas DataFrame
+    # df = pd.DataFrame(candles)
+    # 
+    # # Calculate indicators
+    # rsi = calculate_rsi(df)
+    # ema_signal = calculate_ema_crossover(df)
+    # volume_signal = calculate_volume_signal(df)
+    # atr_signal = calculate_atr_signal(df)
+    # 
+    # return {
+    #     "rsi": rsi,
+    #     "ema_signal": ema_signal,  # "UP", "DOWN", or "NEUTRAL"
+    #     "volume_signal": volume_signal,  # "LOW", "NORMAL", or "HIGH"
+    #     "atr_signal": atr_signal  # "HIGH_VOLATILITY" or "NORMAL"
+    # }
 
 def calculate_rsi(df: pd.DataFrame) -> float:
     """Calculate 14-period RSI"""

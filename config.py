@@ -59,19 +59,24 @@ WHALE_DISCOVERY_INTERVAL = 1800  # 30 minutes
 WHALE_MONITOR_INTERVAL = 12  # 12 seconds
 
 # Whale vetting criteria
-WHALE_MIN_PROFIT = 1000.0      # $1,000 profit in last 7 days
-WHALE_MIN_TRADES = 10          # At least 10 trades
-WHALE_MIN_WIN_RATE = 0.55      # 55% win rate
+WHALE_MIN_PROFIT = 50.0        # $50 profit in last 7 days (realistic for weekly leaderboard)
+WHALE_MIN_TRADES = 3           # At least 3 trades (estimated from volume)
+WHALE_MIN_WIN_RATE = 0.50      # 50% win rate (we default to 60% so this will pass)
 
 # Signal detection
-WHALE_SIGNAL_MIN_WHALES = 2    # Minimum whales on same side
+WHALE_SIGNAL_MIN_WHALES = 2    # Require at least 2 whales to converge (removes noise)
 WHALE_SIGNAL_WINDOW = 300      # 5 minutes (seconds)
 WHALE_SIGNAL_MAX_PRICE_MOVE = 0.10  # Max 10% price movement since first whale
 
-# Position sizing by confidence level
-WHALE_POSITION_STRONG = 0.02   # 2% for STRONG signals
-WHALE_POSITION_HIGH = 0.01     # 1% for HIGH signals
-WHALE_POSITION_MEDIUM = 0.005  # 0.5% for MEDIUM signals
+# Risk Management
+RISK_MANAGEMENT_MODE = "KELLY" # "FIXED" or "KELLY"
+KELLY_FRACTION = 0.5           # Half-Kelly for safety
+DEFAULT_WIN_RATE = 0.60        # Estimated win rate for whales
+
+# Position sizing by confidence level (realistic for fees + slippage)
+WHALE_POSITION_STRONG = 0.05   # 5% for 3+ whales ($5.00) - high confidence
+WHALE_POSITION_HIGH = 0.03     # 3% for 2 whales ($3.00) - good confirmation  
+WHALE_POSITION_MEDIUM = 0.02   # 2% for 1 whale ($2.00) - minimum viable after fees
 
 # Maximum price movement allowed between signal and execution
 WHALE_MAX_SLIPPAGE = 0.05      # 5%
@@ -112,6 +117,7 @@ RESOLUTION_CHECK_INTERVAL = 5
 # Paper fund validation
 PAPER_FUND_MIN = 10.0          # Minimum $10
 PAPER_FUND_MAX = 1000000.0     # Maximum $1M
+DAILY_VOLUME_CAP_PCT = 0.50    # Max daily volume as % of total account value
 
 # ============================================================================
 # FEE CALCULATION (Polymarket's official formula)

@@ -10,7 +10,7 @@ Screen {
 #main_grid {
     layout: grid;
     grid-size: 3;
-    grid-columns: 1fr 2fr 1fr;
+    grid-columns: 1fr 2fr 2fr;
     grid-rows: 1fr;
     padding: 1;
 }
@@ -36,11 +36,15 @@ Screen {
     height: 2;
 }
 
+.spacer-small {
+    height: 1;
+}
+
 /* Strategy Status Widget */
 StrategyStatus {
     layout: horizontal;
-    height: 3;
-    margin-bottom: 1;
+    height: 2;
+    margin-bottom: 0;
     background: $surface;
     border: tall $surface-lighten-1;
     padding: 0 1;
@@ -106,3 +110,39 @@ GlobalStats {
     text-align: center;
     margin: 1 0;
 }
+
+/* Small stat labels for P&L breakdown */
+.stat-label-small {
+    color: $text-muted;
+    width: 12;
+}
+
+.stat-value-small {
+    text-style: bold;
+    color: $secondary;
+}
+
+/* Compact P&L Display */
+.pnl-line {
+    text-align: center;
+    padding: 0 1;
+    background: $surface;
+    text-style: bold;
+}
+
+.pnl-line-small {
+    text-align: center;
+    padding: 0 1;
+    background: $surface;
+}
+
+/* Activity Log Styling */
+#activity_log {
+    height: 100%;
+    width: 100%;
+}
+
+#activity_log > .log--line {
+    text-style: none;
+}
+

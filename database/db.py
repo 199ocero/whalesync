@@ -39,6 +39,7 @@ async def init_database():
                 strategy_id TEXT NOT NULL,
                 market_id TEXT NOT NULL,
                 market_name TEXT,
+                asset TEXT,
                 side TEXT NOT NULL,
                 price REAL NOT NULL,
                 shares REAL NOT NULL,
@@ -49,6 +50,7 @@ async def init_database():
                 payout REAL,
                 profit_or_loss REAL,
                 arb_id TEXT,
+                resolution_time TEXT,
                 created_at TEXT NOT NULL,
                 resolved_at TEXT
             )
@@ -168,6 +170,19 @@ async def update_paper_fund_balance(
         """, (new_balance, profit, loss, fee, 1 if is_win else 0, 1 if is_loss else 0, now))
         await db.commit()
 
+async def get_daily_spend() -> float:
+    """Get total amount spent on trades today"""
+    today = datetime.utcnow().date().isoformat()
+    async with aiosqlite.connect(config.DATABASE_PATH) as db:
+        cursor = await db.execute("""
+            SELECT SUM(cost + fee) as total_spend
+            FROM paper_trades
+            WHERE DATE(created_at) = ?
+        """, (today,))
+        row = await cursor.fetchone()
+        return row[0] if row and row[0] else 0.0
+
+
 # ============================================================================
 # PAPER TRADES OPERATIONS
 # ============================================================================
@@ -181,17 +196,19 @@ async def create_paper_trade(
     shares: float,
     cost: float,
     fee: float = 0,
-    arb_id: Optional[str] = None
+    arb_id: Optional[str] = None,
+    asset: Optional[str] = None,
+    resolution_time: Optional[str] = None
 ) -> int:
     """Create a new paper trade"""
     now = datetime.utcnow().isoformat()
     async with aiosqlite.connect(config.DATABASE_PATH) as db:
         cursor = await db.execute("""
             INSERT INTO paper_trades (
-                strategy_id, market_id, market_name, side, price, shares,
-                cost, fee, arb_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (strategy_id, market_id, market_name, side, price, shares, cost, fee, arb_id, now))
+                strategy_id, market_id, market_name, asset, side, price, shares,
+                cost, fee, arb_id, resolution_time, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (strategy_id, market_id, market_name, asset, side, price, shares, cost, fee, arb_id, resolution_time, now))
         await db.commit()
         return cursor.lastrowid
 
@@ -283,16 +300,55 @@ async def log_whale_trade(
     side: str,
     price: float,
     shares: float
-) -> None:
-    """Log a whale trade"""
+) -> bool:
+    """Log a whale trade with duplicate detection. Returns True if logged, False if duplicate."""
     now = datetime.utcnow().isoformat()
     async with aiosqlite.connect(config.DATABASE_PATH) as db:
+        # Check for duplicate (same wallet, market, side within last 5 minutes)
+        cursor = await db.execute("""
+            SELECT id FROM whale_trades 
+            WHERE wallet_address = ? 
+            AND market_id = ? 
+            AND side = ?
+            AND datetime(timestamp) > datetime('now', '-5 minutes')
+        """, (wallet_address, market_id, side))
+        
+        existing = await cursor.fetchone()
+        if existing:
+            return False  # Duplicate
+        
+        # Log new trade
         await db.execute("""
             INSERT INTO whale_trades (
                 wallet_address, market_id, side, price, shares, timestamp
             ) VALUES (?, ?, ?, ?, ?, ?)
         """, (wallet_address, market_id, side, price, shares, now))
         await db.commit()
+        return True  # Logged successfully
+
+async def get_whale_trades_for_market(market_id: str, since: datetime) -> List[Dict[str, Any]]:
+    """Get all whale trades for a specific market since a given time"""
+    async with aiosqlite.connect(config.DATABASE_PATH) as db:
+        cursor = await db.execute("""
+            SELECT wallet_address, market_id, side, price, shares, timestamp
+            FROM whale_trades
+            WHERE market_id = ?
+            AND datetime(timestamp) > datetime(?)
+            ORDER BY timestamp DESC
+        """, (market_id, since.isoformat()))
+        
+        rows = await cursor.fetchall()
+        return [
+            {
+                "wallet_address": row[0],
+                "market_id": row[1],
+                "side": row[2],
+                "price": row[3],
+                "shares": row[4],
+                "timestamp": row[5]
+            }
+            for row in rows
+        ]
 
 # ============================================================================
 # SIGNAL OPERATIONS

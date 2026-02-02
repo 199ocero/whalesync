@@ -29,31 +29,31 @@ class DashboardScreen(Screen):
         yield Header()
         
         with Grid(id="main_grid"):
-            # Left Column: Strategy Status
+            # Left Column: P&L and Strategy Status
             with Container(id="strategy_panel", classes="panel"):
-                yield Label("STRATEGY STATUS", classes="panel_title")
-                yield widgets.StrategyStatus("NegRisk Arb", "negrisk_arb", id="status_negrisk")
-                yield widgets.StrategyStatus("Bond Scanner", "high_prob_bond", id="status_bond")
-                yield widgets.StrategyStatus("Whale Copy", "whale_copy", id="status_whale")
-                yield widgets.StrategyStatus("Temporal Arb", "temporal_arb", id="status_temporal")
+                yield Label("DAILY P&L", classes="panel_title")
+                yield widgets.PnLDisplay(id="pnl_display")
                 
-                yield Static(classes="spacer")
-                yield Label("GLOBAL STATS", classes="panel_title")
+                yield Static(classes="spacer-small")
+                yield Label("STRATEGIES", classes="panel_title")
+                yield widgets.StrategyStatus("NegRisk", "negrisk_arb", id="status_negrisk")
+                yield widgets.StrategyStatus("Bonds", "high_prob_bond", id="status_bond")
+                yield widgets.StrategyStatus("Whale", "whale_copy", id="status_whale")
+                yield widgets.StrategyStatus("Temporal", "temporal_arb", id="status_temporal")
+                
+                yield Static(classes="spacer-small")
+                yield Label("STATS", classes="panel_title")
                 yield widgets.GlobalStats(id="global_stats")
 
             # Middle Column: Activity Feed
             with Container(id="feed_panel", classes="panel"):
                 yield Label("ACTIVITY FEED", classes="panel_title")
-                yield Log(id="activity_log", highlight=True)
+                yield Log(id="activity_log", highlight=True, max_lines=5000)
 
-            # Right Column: Data Tables
+            # Right Column: Open Positions
             with Container(id="data_panel", classes="panel"):
                 yield Label("OPEN POSITIONS", classes="panel_title")
                 yield DataTable(id="positions_table")
-                
-                yield Static(classes="spacer")
-                yield Label("DAILY P&L", classes="panel_title")
-                yield widgets.PnLDisplay(id="pnl_display")
         
         yield Footer()
 
@@ -72,7 +72,7 @@ class DashboardScreen(Screen):
         
         # Setup tables
         table = self.query_one("#positions_table", DataTable)
-        table.add_columns("Market", "Side", "Size", "P&L")
+        table.add_columns("Asset", "Side", "Size", "Time Left", "P&L")
 
     def on_log_message(self, message: str) -> None:
         """Handle incoming log message"""
@@ -88,20 +88,46 @@ class DashboardScreen(Screen):
 
     async def update_positions(self) -> None:
         """Update open positions table"""
+        from datetime import datetime
+        
         table = self.query_one("#positions_table", DataTable)
         table.clear()
         
         trades = await db.get_open_trades()
         for trade in trades:
-            # Color code based on P&L (simulated)
-            market_name = trade["market_name"][:20] + "..."
+            # Asset
+            asset = trade.get("asset", "Crypto") or "Crypto"
+            
+            # Side with color
             side = f"[{'green' if trade['side']=='YES' else 'red'}]{trade['side']}[/]"
+            
+            # Size
             size = f"${trade['cost']:.2f}"
+            
+            # Time to resolution
+            time_left = "Unknown"
+            if trade.get("resolution_time"):
+                try:
+                    res_time = datetime.fromisoformat(trade["resolution_time"].replace("Z", ""))
+                    now = datetime.utcnow()
+                    delta = res_time - now
+                    
+                    if delta.total_seconds() < 0:
+                        time_left = "Ended"
+                    else:
+                        hours = int(delta.total_seconds() // 3600)
+                        minutes = int((delta.total_seconds() % 3600) // 60)
+                        if hours > 0:
+                            time_left = f"{hours}h {minutes}m"
+                        else:
+                            time_left = f"{minutes}m"
+                except:
+                    time_left = "Unknown"
             
             # Simulated current pnl (just 0 for now as we don't have live market price here yet)
             pnl = "$0.00"
             
-            table.add_row(market_name, side, size, pnl)
+            table.add_row(asset, side, size, time_left, pnl)
     
     def action_pause_feed(self) -> None:
         """Toggle pause/resume of activity feed"""

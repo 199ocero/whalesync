@@ -90,8 +90,9 @@ async def main():
     tasks.append(asyncio.create_task(whale_copy.monitor_whales_loop()))
     
     # Strategy 4: Temporal Arbitrage
-    print("✓ Launching temporal arbitrage scanner...")
-    tasks.append(asyncio.create_task(temporal_arb.scan_temporal_arbitrage()))
+    # DISABLED - Requires external BTC price feeds (CoinGecko has rate limits)
+    # print("✓ Launching temporal arbitrage scanner...")
+    # tasks.append(asyncio.create_task(temporal_arb.scan_temporal_arbitrage()))
     
     print("\n" + "="*60)
     print("✓ All strategies running!")
